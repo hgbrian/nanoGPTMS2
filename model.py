@@ -118,6 +118,8 @@ class GPTConfig:
     n_embd: int = 768
     dropout: float = 0.0
     bias: bool = True # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
+    n_bottleneck: int = 64
+
 
 # --------------------------------------------
 # TEMPTEMP for debugging
@@ -206,7 +208,6 @@ class GPT(nn.Module):
         # attempt to add encoder and decoder
         # should encoder and decoder have different n_layer?
         # currently they are the same
-        self.BOTTLENECK_SIZE = 64
         self.NUM_INTENSITIES = 10
         self.encoder = nn.ModuleDict(dict(
             wte = nn.Embedding(config.vocab_size, config.n_embd, padding_idx=0),
@@ -215,10 +216,10 @@ class GPT(nn.Module):
             drop = nn.Dropout(config.dropout),
             h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
             ln_f = LayerNorm(config.n_embd, bias=config.bias),
-            bottleneck = nn.Linear(config.block_size * config.n_embd, self.BOTTLENECK_SIZE)
+            bottleneck = nn.Linear(config.block_size * config.n_embd, config.n_bottleneck)
         ))
         self.decoder = nn.ModuleDict(dict(
-            unbottleneck = nn.Linear(self.BOTTLENECK_SIZE, config.block_size * config.n_embd),
+            unbottleneck = nn.Linear(config.n_bottleneck, config.block_size * config.n_embd),
             h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
             drop = nn.Dropout(config.dropout),
             ln_f = LayerNorm(config.n_embd, bias=config.bias),
@@ -265,9 +266,9 @@ class GPT(nn.Module):
 
 
 
-    def forward(self, idx, targets=None):
+    def forward(self, idx, targets=None, embedding=False):
         # when training:
-        # idx torch.Size([64 batch_size, 256 block_size]) tensor([[51, 43,  1,  ..., 53, 44,  1],
+        # idx torch.Size([64 batch_size, 128 block_size]) tensor([[51, 43,  1,  ..., 53, 44,  1],
         # when "sampling", it grows one at a time:
         # idx torch.Size([1, 1]) tensor([[0]], device='cuda:0')
         # idx torch.Size([1, 2]) tensor([[ 0, 15]], device='cuda:0')
@@ -311,6 +312,8 @@ class GPT(nn.Module):
 
         # flat representation of one block
         z_bottleneck = self.encoder.bottleneck(z_flat)
+        if embedding:
+            return z_bottleneck
 
         # TEST decoder
         # z_flat = (32 batch_size, 128 flattened)
@@ -320,10 +323,11 @@ class GPT(nn.Module):
             z = block(z)
         z = self.decoder.drop(z) # test adding dropout to decoder too
         z = self.decoder.ln_f(z)
+
         # logits = (32 batch_size, 16 block_size, 22 vocab_size)
         # logits.view(-1, logits.size(-1)).shape = (512, 22), just flatten batches for cross_entropy
         logits2 = self.lm_head(z)
-
+        loss2 = None
         if targets is not None:
             # logits = (batch_size, block_size, vocab_size)
             #print(logits2[0], torch.argmax(logits2[0][0]))
