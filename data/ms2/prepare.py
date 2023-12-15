@@ -8,13 +8,11 @@ import os
 import pickle
 import numpy as np
 
-from lib.interactive_reports.ui_components.components import Data
-
 BLOCK_SIZE = 128
 PAD, BOS, EOS = "[PAD]", "[START]", "[END]"
 
 # download the tiny shakespeare dataset
-input_file_path = os.path.join(os.path.dirname(__file__), 'input_spectra.0.10000.txt')
+input_file_path = os.path.join(os.path.dirname(__file__), 'input_spectra.all.txt')
 
 with open(input_file_path, 'r') as f:
     lines = f.readlines()
