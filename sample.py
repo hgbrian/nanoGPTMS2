@@ -10,10 +10,10 @@ from model import GPTConfig, GPT
 
 # -----------------------------------------------------------------------------
 init_from = 'resume' # either 'resume' (from an out_dir) or a gpt2 variant (e.g. 'gpt2-xl')
-out_dir = 'out' # ignored if init_from is not 'resume'
-start = "[START]" # or "<|endoftext|>" or etc. Can also specify a file, use as: "FILE:prompt.txt"
-num_samples = 100 # number of samples to draw
-max_new_tokens = 500 # number of tokens generated in each sample
+out_dir = 'out-ms2' # ignored if init_from is not 'resume'
+#start = "[START]" # or "<|endoftext|>" or etc. Can also specify a file, use as: "FILE:prompt.txt"
+#num_samples = 100 # number of samples to draw
+#max_new_tokens = 500 # number of tokens generated in each sample
 temperature = 0.8 # 1.0 = no change, < 1.0 = less random, > 1.0 = more random, in predictions
 top_k = 200 # retain only the top_k most likely tokens, clamp others to have 0 probability
 seed = 1337
@@ -53,11 +53,13 @@ model.to(device)
 if compile:
     model = torch.compile(model) # requires PyTorch 2.0 (optional)
 
+
 # look for the meta pickle in case it is available in the dataset folder
 load_meta = False
 if init_from == 'resume' and 'config' in checkpoint and 'dataset' in checkpoint['config']: # older checkpoints might not have these...
     meta_path = os.path.join('data', checkpoint['config']['dataset'], 'meta.pkl')
     load_meta = os.path.exists(meta_path)
+
 if load_meta:
     print(f"Loading meta from {meta_path}...")
     with open(meta_path, 'rb') as f:
@@ -72,6 +74,25 @@ else:
     enc = tiktoken.get_encoding("gpt2")
     encode = lambda s: enc.encode(s, allowed_special={"<|endoftext|>"})
     decode = lambda l: enc.decode(l)
+
+with torch.no_grad():
+    with ctx:
+        spec = torch.zeros((1, 128), dtype=torch.long, device=device)
+        embedding = model.forward(spec, embedding=True)
+        print("embedding.shape", embedding.shape)
+        print("embedding", embedding)
+        logits, loss = model.forward(spec) # run the model once to initialize caches and fusion kernels
+        print("logits.shape", logits.shape)
+        print("logits", logits)
+        print("logits max", logits.max(-1).indices)
+1/0
+
+with torch.no_grad():
+    with ctx:
+        for k in range(num_samples):
+            y = model.generate(x, max_new_tokens, temperature=temperature, top_k=top_k)
+            print(decode(y[0].tolist()))
+            print('---------------')
 
 # encode the beginning of the prompt
 if start.startswith('FILE:'):
